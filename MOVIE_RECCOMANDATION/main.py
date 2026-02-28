@@ -34,7 +34,7 @@ def retrieve_documents(query, sentence_model, collection, top_k=5):
     #Search for top_k similar docs
     results = collection.query(
         query_embeddings = [query_embedding],
-        n_result = top_k
+        n_results = top_k
     )
     if not results['documents']:
         print("No results found for the query.")
