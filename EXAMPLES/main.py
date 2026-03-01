@@ -13,15 +13,15 @@ import seaborn as sns
 from sklearn.manifold import TSNE
 from transformers import BertModel, BertTokenizer
 import numpy as np
-from IPython.display import HTML
-from langchain_text_splitters import TokenTextSplitter
-from collections import defaultdic
+from langchain_text_splitters import CharacterTextSplitter
+import os
 
 text_splitter = NLTKTextSplitter(chunk_size = 1500)
 
 
 def load_dataset(url):
-    out_dir = Path("data")
+
+    out_dir = Path(os.path.join(os.path.dirname(__file__), 'data'))
     out_dir.mkdir(exist_ok=True)
 
     #download
@@ -107,16 +107,22 @@ def show_word_tsne_embeddings(sentences, labels, model, tokenizer):
 
     plt.figure(figsize=(14, 8))
     colors = {'money': 'blue', 'river': 'green'}
-    for i, label in enumerate(labels ):
-        plt.scatter(embeddings_2d[i, 0], embeddings_2d[i, 1], color=colors[label], label=label if (labels + ['money', 'river']).index(label) == i else "")
+    label_to_scatter = {'money': 'Bank (Money)', 'river': 'Bank (River)'}
+    for i, label in enumerate(labels):
+        plt.scatter(embeddings_2d[i, 0], embeddings_2d[i, 1], color=colors[label], label=label_to_scatter[label] if i == labels.index(label) else "")
         plt.annotate(sentences[i], (embeddings_2d[i, 0], embeddings_2d[i, 1]), fontsize=10, alpha=0.75)
+
+    path_dir = Path(os.path.join(os.path.dirname(__file__), 'images'))
+    path_dir.mkdir(exist_ok=True)
+
+    data_path = os.path.join(path_dir, 'bank_embedding.jpg')
 
     plt.title('t-SNE visualization of BERT embeddings for the word "bank"')
     plt.xlabel('Dimension 1', fontsize=12)
     plt.ylabel('Dimension 2', fontsize=12)
     plt.legend(title="Contextual Meaning", loc= 'upper left')
     plt.grid(True)
-    plt.savefig('bank_embedding.jpg', format='jpeg')
+    plt.savefig(data_path, format='jpeg')
     plt.show()
 
 
@@ -128,16 +134,21 @@ def show_sentence_tsne_embeddings(sentences, labels, model, tokenizer):
 
     plt.figure(figsize=(14, 8))
     colors = {'money': 'blue', 'river': 'green'}
-    for i, label in enumerate(labels ):
-        plt.scatter(embeddings_2d[i, 0], embeddings_2d[i, 1], color=colors[label], label=label if (labels + ['money', 'river']).index(label) == i else "")
+    label_to_scatter = {'money': 'Bank (Money)', 'river': 'Bank (River)'}
+    for i, label in enumerate(labels):
+        plt.scatter(embeddings_2d[i, 0], embeddings_2d[i, 1], color=colors[label], label=label_to_scatter[label] if i == labels.index(label) else "")
         plt.annotate(sentences[i], (embeddings_2d[i, 0], embeddings_2d[i, 1]), fontsize=10, alpha=0.75)
 
-    plt.title('t-SNE visualization of BERT embeddings for the word "bank"')
+    path_dir = Path(os.path.join(os.path.dirname(__file__), 'images'))
+    path_dir.mkdir(exist_ok=True)
+
+    data_path = os.path.join(path_dir, 'sentence_embeddings.jpg')
+    plt.title('t-SNE visualization of BERT CLS embeddings')
     plt.xlabel('Dimension 1', fontsize=12)
     plt.ylabel('Dimension 2', fontsize=12)
     plt.legend(title="Contextual Meaning", loc= 'upper left')
     plt.grid(True)
-    plt.savefig('sentence_embeddings.jpg', format='jpeg')
+    plt.savefig(data_path, format='jpeg')
     plt.show()
 
 def show_cosine_similarities(queries, sentences, labels, model, tokenizer):
@@ -153,13 +164,18 @@ def show_cosine_similarities(queries, sentences, labels, model, tokenizer):
         "I opened a new savings account\nat the bank.",  # money
         "The fisherman stood by\nthe river bank all day."  # river
     ]
+
+    path_dir = Path(os.path.join(os.path.dirname(__file__), 'images'))
+    path_dir.mkdir(exist_ok=True)
+
+    data_path = os.path.join(path_dir, 'bi-encoder.jpg')
     plt.figure(figsize=(10, 8))
     sns.heatmap(sorted_similarities, annot=True, xticklabels=queries, 
                 yticklabels=sorted_sentences, cmap='coolwarm', fmt='.2f')
     plt.title('Cosine similarity between documents and queries')
     plt.xlabel('Queries')
     plt.ylabel('Documents')
-    plt.savefig('bi-encoder.jpg', format='jpeg', bbox_inches='tight')
+    plt.savefig(data_path, format='jpeg', bbox_inches='tight')
     plt.show()
 
 
@@ -182,23 +198,88 @@ SENTENCES = [
 LABELS = ['money', 'river', 'money', 'river', 'money', 'river', 'money', 'river', 'money', 'river']
 
 
-def example_chunking(text, chunk_size, chunk_overlap, overlap_size):
-    text_chunker = TokenTextSplitter(chunk_size = chunk_size, chunk_overlap = chunk_overlap, separator = '\n') 
+def example_chunking(text, chunk_size, separator, overlap_size):
+    text_chunker = CharacterTextSplitter(chunk_size = chunk_size, chunk_overlap = overlap_size, separator = separator) 
     #decide overlap, and separator (for character chunking)
     docs = text_chunker.create_documents(texts=[text])
     chunks = [doc.page_content for doc in docs]
 
-    colored_text = ""
     colors = ['#ff9999', '#99ff99', '#9999ff', '#ffff99', '#99ffff', '#ff99ff', '#cccccc',
               '#ff6666', '#66ff66', '#6666ff', '#ffff66', '#66ffff', '#ff66ff', '#ccccff',
               '#996699', '#669999', '#999966', '#669966', '#966696', '#696669']
 
-    for i, chunk in enumerate(chunks):
-        color = colors[i % len(colors)]
-        chunk_html = f'<span style="background-color:{color}">{chunk}</span>'
-        colored_text += chunk_html + '<br><br>'
+    # Find overlapping suffix of chunk[i] that appears as prefix of chunk[i+1]
+    def find_overlap(a, b):
+        for length in range(min(len(a), len(b)), 0, -1):
+            if a.endswith(b[:length]):
+                return b[:length]
+        return ""
 
-    print(HTML(colored_text))
+    n_chunks = len(chunks)
+    fig, axes = plt.subplots(n_chunks, 1, figsize=(12, max(4, n_chunks * 1.8)))
+    if n_chunks == 1:
+        axes = [axes]
+
+    for i, chunk in enumerate(chunks):
+        ax = axes[i]
+        ax.axis('off')
+        base_color = colors[i % len(colors)]
+
+        # Determine overlap region at the END of this chunk (shared with next chunk)
+        overlap_suffix = find_overlap(chunk, chunks[i + 1]) if i < n_chunks - 1 else ""
+        # Determine overlap region at the START of this chunk (shared with previous chunk)
+        overlap_prefix = find_overlap(chunks[i - 1], chunk) if i > 0 else ""
+
+        unique_start = len(overlap_prefix)
+        unique_end = len(chunk) - len(overlap_suffix)
+        unique_text = chunk[unique_start:unique_end]
+
+        label = f"Chunk {i+1}"
+        display_parts = []
+        if overlap_prefix:
+            display_parts.append(f"[←overlap: {repr(overlap_prefix)}] ")
+        display_parts.append(unique_text)
+        if overlap_suffix:
+            display_parts.append(f" [overlap→: {repr(overlap_suffix)}]")
+
+        x = 0.01
+        # Draw prefix overlap label in grey
+        if overlap_prefix:
+            t = ax.text(x, 0.5, f"[←{repr(overlap_prefix)}] ", transform=ax.transAxes,
+                        fontsize=8, va='center', color='dimgray',
+                        bbox=dict(boxstyle='round,pad=0.3', facecolor='#dddddd', alpha=0.8))
+            fig.canvas.draw()
+            bb = t.get_window_extent(renderer=fig.canvas.get_renderer())
+            x += bb.width / fig.get_window_extent().width
+
+        # Draw unique content in chunk color
+        t = ax.text(x, 0.5, f"[{label}] {unique_text}", transform=ax.transAxes,
+                    fontsize=8, va='center',
+                    bbox=dict(boxstyle='round,pad=0.3', facecolor=base_color, alpha=0.7))
+        fig.canvas.draw()
+        bb = t.get_window_extent(renderer=fig.canvas.get_renderer())
+        x += bb.width / fig.get_window_extent().width
+
+        # Draw suffix overlap label in orange
+        if overlap_suffix:
+            ax.text(x, 0.5, f" [→{repr(overlap_suffix)}]", transform=ax.transAxes,
+                    fontsize=8, va='center', color='darkorange',
+                    bbox=dict(boxstyle='round,pad=0.3', facecolor='#ffe0b2', alpha=0.9))
+
+        print(f"[Chunk {i+1}] {chunk}")
+        if overlap_suffix:
+            print(f"  overlap with next → {repr(overlap_suffix)}\n")
+
+    plt.suptitle("Character Chunking Visualization\n(grey = overlap from prev | orange = overlap into next)",
+                 fontsize=12, fontweight='bold')
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
+
+    path_dir = Path(os.path.join(os.path.dirname(__file__), 'images'))
+    path_dir.mkdir(exist_ok=True)
+    save_path = os.path.join(path_dir, 'chunking.jpg')
+    plt.savefig(save_path, format='jpeg', bbox_inches='tight')
+    print(f"Chunking image saved to {save_path}")
+    plt.show()
 
 
 def evaluation(ranks, labels):
@@ -211,9 +292,9 @@ def evaluation(ranks, labels):
     recalls = []
     for i in range(1, len(df) + 1):
         sub_df = df.iloc[:i]
-        tp = sum(sub_df['binary_label'])
+        tp = sum(sub_df['BinaryLabels'])
         fp = i - tp
-        fn = sum(df['binary_label']) - tp
+        fn = sum(df['BinaryLabels']) - tp
         
         precision = tp / (tp + fp) if (tp + fp) > 0 else 0
         recall = tp / (tp + fn) if (tp + fn) > 0 else 0
@@ -229,11 +310,10 @@ def evaluation(ranks, labels):
 
 def main():
 
-    try: 
-        df = read_data("data/IMDB Dataset.csv")
-    except:
+    data_path = os.path.join(os.path.dirname(__file__), 'data', 'IMDB Dataset.csv')
+    if not os.path.exists(data_path):
         load_dataset("https://github.com/SalvatoreRa/tutorial/blob/main/datasets/IMDB.zip?raw=true")
-        df = read_data("data/IMDB Dataset.csv")
+    df = read_data(data_path)
     
     movie_embeddings, _, tf_idf_vectorizer = embed_movies(df)
 
@@ -282,15 +362,19 @@ def main():
         Devoutly to be wished.'''
     
     chunk_size = 256
-    chunk_overlap = '\n'
+    separator = '\n'
     overlap_size = 20
 
-    example_chunking(text, chunk_size, chunk_overlap, overlap_size) #see other chunkign exmaples in CHUNKING/ folder
+    example_chunking(text, chunk_size, separator, overlap_size) #see other chunkign exmaples in CHUNKING/ folder
 
     #EXAMPLE OF EVALUATION WITH PRECISION and RECALL 
     print('='*30)
     print('EXAMPLE OF EVALUATION WITH PRECISION and RECALL')
     print('='*30)
+    ranks = np.arange(1, 21)
+    labels = ['R', 'R', 'NR', 'R', 'R', 'NR','NR', 'R', 'R','NR',
+          'R','R','NR','R','NR','NR','NR','R', 'NR', 'NR',]
+    evaluation(ranks, labels)
 
  
 
